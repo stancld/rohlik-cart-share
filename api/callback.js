@@ -1,4 +1,4 @@
-import { MCP, identity } from "./_rohlik.js";
+import { MCP, REDIRECT_URI, identity } from "./_rohlik.js";
 
 function redirect(location) {
   return new Response(null, {
@@ -23,7 +23,7 @@ export async function GET(request) {
         grant_type: "authorization_code",
         code,
         client_id: clientId,
-        redirect_uri: `${url.origin}/api/callback`,
+        redirect_uri: REDIRECT_URI,
         code_verifier: verifier,
         resource: MCP,
       },

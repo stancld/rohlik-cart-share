@@ -1,5 +1,8 @@
 export const IDENTITY = "https://identity.rohlik.cz";
 export const MCP = "https://mcp.rohlik.cz/mcp";
+// Dynamic client registration only accepts localhost (or known AI assistants) as redirect targets.
+// Nothing listens there: the user copies the address from that tab back into the app.
+export const REDIRECT_URI = "http://localhost/rohlik-cart-share";
 
 // identity.rohlik.cz sits behind Cloudflare, which rejects non-browser user agents (error 1010).
 const HEADERS = {

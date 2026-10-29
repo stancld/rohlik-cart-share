@@ -30,7 +30,12 @@
 
 <section id="start" hidden>
   <p>Sign in with your Rohlík account to get a link that lets someone else view and edit your cart without logging in.</p>
-  <p><a href="/api/login"><button>Sign in with Rohlík</button></a></p>
+  <p><a href="/api/login" target="_blank"><button>1. Sign in with Rohlík</button></a></p>
+  <p class="muted">The sign-in tab ends on a page that fails to load at <code>localhost/rohlik-cart-share?code=…</code>. That's expected: copy its whole address and paste it here.</p>
+  <form class="row" id="finish">
+    <input id="redirect" placeholder="http://localhost/rohlik-cart-share?code=…" required>
+    <button>2. Finish</button>
+  </form>
 </section>
 
 <section id="app" hidden>
@@ -142,6 +147,12 @@ $("results").addEventListener("click", (e) => {
 $("copy").addEventListener("click", async () => {
   await navigator.clipboard.writeText(location.href);
   $("copy").textContent = "Copied";
+});
+
+$("finish").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const pasted = $("redirect").value.trim();
+  location.href = "/api/callback" + new URL(pasted.includes("://") ? pasted : `http://${pasted}`).search;
 });
 
 // Pasting a share link into an open tab only changes the hash; restart with the new link.

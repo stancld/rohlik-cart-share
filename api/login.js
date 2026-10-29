@@ -1,15 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
-import { IDENTITY, MCP, identity } from "./_rohlik.js";
+import { IDENTITY, MCP, REDIRECT_URI, identity } from "./_rohlik.js";
 
 const b64url = (buf) => buf.toString("base64url");
 
 export async function GET(request) {
   const url = new URL(request.url);
-  const redirectUri = `${url.origin}/api/callback`;
   const { client_id } = await identity("/connect/register", {
     json: {
       client_name: "Rohlík cart share",
-      redirect_uris: [redirectUri],
+      redirect_uris: [REDIRECT_URI],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
@@ -21,7 +20,7 @@ export async function GET(request) {
   authorize.search = new URLSearchParams({
     response_type: "code",
     client_id,
-    redirect_uri: redirectUri,
+    redirect_uri: REDIRECT_URI,
     // The MCP rejects tokens without the "roles" scope.
     scope: "openid email roles offline_access",
     code_challenge: b64url(createHash("sha256").update(verifier).digest()),

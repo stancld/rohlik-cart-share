@@ -2,7 +2,8 @@
 
 Share your Rohlík cart with someone who isn't logged in to your account.
 
-1. Open the app and sign in with Rohlík (Apple sign-in works).
+1. Open the app and sign in with Rohlík (Apple sign-in works). Rohlík only lets apps like this redirect to `localhost`,
+   so the sign-in tab ends on a page that fails to load; paste its address back into the app.
 2. Copy the share link and send it. Whoever opens it can view the cart, search products, and change quantities.
 
 Everything runs in the browser and talks to the official Rohlík MCP (`https://mcp.rohlik.cz/mcp`).
