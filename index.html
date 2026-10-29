@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Rohlík cart share</title>
+<style>
+  body { font: 16px/1.4 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; }
+  button { font: inherit; padding: .35rem .8rem; border: 1px solid #6da543; background: #6da543; color: #fff; border-radius: 6px; cursor: pointer; }
+  button.ghost { background: #fff; color: #333; border-color: #ccc; padding: .2rem .55rem; }
+  button:disabled { opacity: .5; cursor: wait; }
+  input { font: inherit; padding: .35rem .5rem; border: 1px solid #ccc; border-radius: 6px; }
+  ul { list-style: none; padding: 0; }
+  li { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; border-bottom: 1px solid #eee; }
+  li img { width: 44px; height: 44px; object-fit: contain; }
+  li .name { flex: 1; }
+  li small, .muted { color: #777; }
+  .row { display: flex; gap: .5rem; }
+  .row input { flex: 1; }
+  .err { color: #b00020; }
+  .share { background: #f4f9ef; padding: .8rem; border-radius: 8px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>🥐 Rohlík cart share</h1>
+<p id="error" class="err" hidden></p>
+
+<section id="start" hidden>
+  <p>Sign in with your Rohlík account to get a link that lets someone else view and edit your cart without logging in.</p>
+  <p><a href="/api/login"><button>Sign in with Rohlík</button></a></p>
+</section>
+
+<section id="app" hidden>
+  <div class="share">
+    <strong>Share link</strong> <button class="ghost" id="copy">Copy</button>
+    <div class="muted">Anyone with this link has full access to the Rohlík account. Share it only with people you trust.</div>
+  </div>
+
+  <h2>Add products</h2>
+  <form class="row" id="search">
+    <input id="q" placeholder="např. mléko" required>
+    <button>Search</button>
+  </form>
+  <ul id="results"></ul>
+
+  <h2>Cart <span id="total" class="muted"></span></h2>
+  <ul id="cart"><li class="muted">Loading…</li></ul>
+</section>
+
+<script>
+const MCP = "https://mcp.rohlik.cz/mcp";
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.hash.slice(1));
+const share = params.get("share");
+const czk = (n) => `${Number(n).toFixed(2).replace(".", ",")} Kč`;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+let accessToken = null;
+
+function showError(e) {
+  $("error").textContent = e.message ?? e;
+  $("error").hidden = false;
+}
+
+async function refreshToken() {
+  const res = await fetch("/api/token", { method: "POST", body: atob(share.replace(/-/g, "+").replace(/_/g, "/")) });
+  const body = await res.json();
+  if (!res.ok) throw new Error(`This share link no longer works (${body.error})`);
+  accessToken = body.access_token;
+}
+
+async function call(name, args = {}, retry = true) {
+  if (!accessToken) await refreshToken();
+  const res = await fetch(MCP, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name, arguments: { ...args, context: "Shared cart web app" } } }),
+  });
+  if (res.status === 401 && retry) { accessToken = null; return call(name, args, false); }
+  const text = await res.text();
+  const msg = JSON.parse(/^data: (.*)$/m.exec(text)?.[1] ?? text);
+  const result = msg.result;
+  if (!result || result.isError) throw new Error(result?.content?.[0]?.text ?? msg.error?.message ?? text);
+  const data = JSON.parse(result.content[0].text);
+  if (data.success === false) throw new Error(data.message ?? data.error ?? "Rohlík request failed");
+  return data;
+}
+
+async function busy(button, fn) {
+  button.disabled = true;
+  $("error").hidden = true;
+  try { await fn(); } catch (e) { showError(e); } finally { button.disabled = false; }
+}
+
+async function loadCart() {
+  const { data } = await call("get_cart");
+  const items = Object.values(data.items ?? {});
+  $("total").textContent = items.length ? `· ${czk(data.totalPrice)}` : "";
+  $("cart").innerHTML = items.length ? items.map((i) => `
+    <li>
+      <img src="https://cdn.rohlik.cz${esc(i.imgPath)}" alt="">
+      <span class="name">${esc(i.productName)} <small>${esc(i.textualAmount)}</small><br><small>${czk(i.price)}</small></span>
+      <button class="ghost" data-id="${i.productId}" data-q="${i.quantity - 1}">−</button>
+      <span>${i.quantity}</span>
+      <button class="ghost" data-id="${i.productId}" data-q="${i.quantity + 1}">+</button>
+    </li>`).join("") : `<li class="muted">The cart is empty.</li>`;
+}
+
+$("cart").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-id]");
+  if (b) busy(b, async () => {
+    await call("update_cart_item", { product_id: +b.dataset.id, quantity: +b.dataset.q });
+    await loadCart();
+  });
+});
+
+$("search").addEventListener("submit", (e) => {
+  e.preventDefault();
+  busy(e.submitter, async () => {
+    const { results } = await call("batch_search_products", { queries: [{ keyword: $("q").value }] });
+    const products = results[0]?.products ?? [];
+    $("results").innerHTML = products.length ? products.map((p) => `
+      <li>
+        <span class="name">${esc(p.productName)} <small>${esc(p.textualAmount)}</small><br>
+          <small>${czk(p.price)}${p.inStock ? "" : " · not in stock"}</small></span>
+        <button class="ghost" data-id="${p.productId}">Add</button>
+      </li>`).join("") : `<li class="muted">Nothing found.</li>`;
+  });
+});
+
+$("results").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-id]");
+  if (b) busy(b, async () => {
+    await call("add_items_to_cart", { items: [{ productId: +b.dataset.id, quantity: 1 }] });
+    await loadCart();
+  });
+});
+
+$("copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(location.href);
+  $("copy").textContent = "Copied";
+});
+
+// Pasting a share link into an open tab only changes the hash; restart with the new link.
+addEventListener("hashchange", () => location.reload());
+if (params.get("error")) showError(params.get("error"));
+if (share) {
+  $("app").hidden = false;
+  loadCart().catch(showError);
+} else {
+  $("start").hidden = false;
+}
+</script>
+</body>
+</html>
